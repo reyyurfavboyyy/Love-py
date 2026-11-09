@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>I love you &lt;3</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: rgb(12, 0, 8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+      font-family: 'Georgia', serif;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="1000" height="1000"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const CFG = {
+      width: 1000,
+      height: 1000,
+      fps: 120,
+      bgColor: 'rgb(12, 0, 8)',
+      centerColor: 'rgb(255, 235, 240)',
+      scale: 20,
+      yOffset: -45,
+      nOutline: 160,
+      nFill: 130,
+      nFloating: 750,
+      outlineGap: 22,
+      fillGap: 30,
+      framesPerStep: 0.075,
+      fillDelayOffset: 18,
+      centerDelay: 40,
+      fadeSpeedMin: 15,
+      fadeSpeedRand: 8,
+      heartWords: ["i love you", "I LOVE YOU", "love you"],
+      centerText: " I Love you",
+      floatWords: ["love", "♥", "love you", "❤"],
+      colors: [
+        "rgb(255, 20, 20)",
+        "rgb(220, 20, 60)",
+        "rgb(255, 0, 0)",
+        "rgb(178, 34, 34)",
+        "rgb(255, 60, 60)"
+      ]
+    };
+
+    function heartParametric(t) {
+      const x = 16.0 * Math.pow(Math.sin(t), 3);
+      const y = 13.0 * Math.cos(t) - 5.0 * Math.cos(2.0 * t) - 2.0 * Math.cos(3.0 * t) - Math.cos(4.0 * t);
+      return [x, -y];
+    }
+
+    function heartToScreen(hx, hy) {
+      const sx = hx * CFG.scale + (CFG.width / 2.0);
+      const sy = hy * CFG.scale + (CFG.height / 2.0) + CFG.yOffset;
+      return [sx, sy];
+    }
+
+    // Poligon batas hati untuk deteksi titik dalam
+    const polyBoundary = [];
+    for (let i = 0; i < 240; i++) {
+      const t = (i * 2.0 * Math.PI) / 240;
+      const [hx, hy] = heartParametric(t);
+      polyBoundary.push(heartToScreen(hx, hy));
+    }
+
+    function isInsidePolygon(px, py, poly) {
+      let inside = false;
+      const n = poly.length;
+      let p1 = poly[0];
+      for (let i = 1; i <= n; i++) {
+        const p2 = poly[i % n];
+        if (py > Math.min(p1[1], p2[1]) && py <= Math.max(p1[1], p2[1])) {
+          if (px <= Math.max(p1[0], p2[0])) {
+            const xinters = p1[1] !== p2[1]
+              ? ((py - p1[1]) * (p2[0] - p1[0])) / (p2[1] - p1[1]) + p1[0]
+              : p1[0];
+            if (p1[0] === p2[0] || px <= xinters) {
+              inside = !inside;
+            }
+          }
+        }
+        p1 = p2;
+      }
+      return inside;
+    }
+
+    class Particle {
+      constructor(x, y, kind, word, color, delay, floatSpeedY = 0, floatSpeedX = 0) {
+        this.x = x;
+        this.y = y;
+        this.baseX = x;
+        this.baseY = y;
+        this.kind = kind;
+        this.word = word;
+        this.color = color;
+        this.delay = delay;
+        this.alpha = 0.0;
+        this.flicker = Math.random() * Math.PI * 2;
+        this.floatSpeedY = floatSpeedY;
+        this.floatSpeedX = floatSpeedX;
+      }
+
+      update(step) {
+        if (step >= this.delay && this.alpha < 255) {
+          const speed = CFG.fadeSpeedMin + Math.random() * CFG.fadeSpeedRand;
+          this.alpha = Math.min(255, this.alpha + speed * CFG.framesPerStep);
+        }
+
+        this.flicker += 0.016;
+
+        if (this.kind === 'floating') {
+          this.y -= this.floatSpeedY;
+          this.x += this.floatSpeedX + Math.sin(this.flicker) * 0.20;
+          if (this.y < -30) {
+            this.y = CFG.height + 20 + Math.random() * 60;
+            this.x = 40 + Math.random() * (CFG.width - 80);
+          }
+        } else {
+          this.x = this.baseX + Math.sin(this.flicker) * 0.85;
+          this.y = this.baseY + Math.cos(this.flicker * 0.8) * 0.60;
+        }
+      }
+
+      draw(targetCtx) {
+        if (this.alpha <= 0) return;
+
+        const flickerFactor = 0.82 + 0.18 * Math.sin(this.flicker);
+        const maxLimit = this.kind === 'floating' ? 140 : 255;
+        const currentAlpha = (Math.min(maxLimit, this.alpha) * flickerFactor) / 255.0;
+        if (currentAlpha <= 0.01) return;
+
+        targetCtx.save();
+        targetCtx.globalAlpha = currentAlpha;
+        targetCtx.fillStyle = this.color;
+        targetCtx.textAlign = 'center';
+        targetCtx.textBaseline = 'middle';
+
+        if (this.word === '♥' || this.word === '❤') {
+          targetCtx.font = '14px "Segoe UI Symbol", "Apple Color Emoji", sans-serif';
+        } else {
+          targetCtx.font = 'bold 13px Georgia, serif';
+        }
+
+        targetCtx.fillText(this.word, this.x, this.y);
+        targetCtx.restore();
+      }
+    }
+
+    // 1. Outline Particles
+    const outlineParticles = [];
+    for (let i = 0; i < CFG.nOutline; i++) {
+      const t = (i * 2.0 * Math.PI) / CFG.nOutline;
+      const [hx, hy] = heartParametric(t);
+      const [sx, sy] = heartToScreen(hx, hy);
+      const jx = sx + (Math.random() - 0.5) * 2;
+      const jy = sy + (Math.random() - 0.5) * 2;
+
+      const word = CFG.heartWords[Math.floor(Math.random() * CFG.heartWords.length)];
+      const color = CFG.colors[Math.floor(Math.random() * CFG.colors.length)];
+      const delay = (i / CFG.nOutline) * CFG.fillDelayOffset;
+
+      outlineParticles.push(new Particle(jx, jy, 'outline', word, color, delay));
+    }
+
+    // 2. Fill Particles
+    const fillPoints = [];
+    let attempts = 0;
+    while (fillPoints.length < CFG.nFill && attempts < 15000) {
+      attempts++;
+      const rx = 180 + Math.random() * 640;
+      const ry = 140 + Math.random() * 660;
+
+      if (!isInsidePolygon(rx, ry, polyBoundary)) continue;
+
+      let tooCloseOutline = false;
+      for (const op of outlineParticles) {
+        if (Math.hypot(rx - op.baseX, ry - op.baseY) < CFG.outlineGap) {
+          tooCloseOutline = true;
+          break;
+        }
+      }
+      if (tooCloseOutline) continue;
+
+      let tooCloseFill = false;
+      for (const fp of fillPoints) {
+        if (Math.hypot(rx - fp[0], ry - fp[1]) < CFG.fillGap) {
+          tooCloseFill = true;
+          break;
+        }
+      }
+      if (tooCloseFill) continue;
+
+      fillPoints.push([rx, ry]);
+    }
+
+    // Urutkan fill dari bawah ke atas
+    fillPoints.sort((a, b) => b[1] - a[1]);
+
+    const fillParticles = [];
+    const fillSpan = CFG.centerDelay - CFG.fillDelayOffset;
+    fillPoints.forEach((pt, i) => {
+      const word = CFG.heartWords[Math.floor(Math.random() * CFG.heartWords.length)];
+      const color = CFG.colors[Math.floor(Math.random() * CFG.colors.length)];
+      const delay = CFG.fillDelayOffset + (i / fillPoints.length) * fillSpan;
+      fillParticles.push(new Particle(pt[0], pt[1], 'fill', word, color, delay));
+    });
+
+    // 3. Floating Particles
+    const floatParticles = [];
+    for (let i = 0; i < CFG.nFloating; i++) {
+      const fx = 30 + Math.random() * (CFG.width - 60);
+      const fy = 120 + Math.random() * (CFG.height + 100);
+      const word = CFG.floatWords[Math.floor(Math.random() * CFG.floatWords.length)];
+      const color = CFG.colors[Math.floor(Math.random() * CFG.colors.length)];
+      const delay = Math.random() * (CFG.centerDelay + 20);
+      const speedY = 0.12 + Math.random() * 0.33;
+      const speedX = (Math.random() - 0.5) * 0.16;
+      floatParticles.push(new Particle(fx, fy, 'floating', word, color, delay, speedY, speedX));
+    }
+
+    let step = 0;
+    let centerAlpha = 0;
+    let centerPulse = 0;
+
+    const centerX = CFG.width / 2.0;
+    const centerY = CFG.height / 2.0 + CFG.yOffset - 10;
+
+    function animate() {
+      step += CFG.framesPerStep;
+
+      ctx.fillStyle = CFG.bgColor;
+      ctx.fillRect(0, 0, CFG.width, CFG.height);
+
+      // Gambar floating particles
+      for (const p of floatParticles) {
+        p.update(step);
+        p.draw(ctx);
+      }
+
+      // Gambar outline & fill
+      for (const p of outlineParticles) {
+        p.update(step);
+        p.draw(ctx);
+      }
+      for (const p of fillParticles) {
+        p.update(step);
+        p.draw(ctx);
+      }
+
+      // Teks tengah " I Love you" (step > centerDelay + 80)
+      if (step > (CFG.centerDelay + 80)) {
+        if (centerAlpha < 255) {
+          centerAlpha = Math.min(255, centerAlpha + 0.30);
+        }
+
+        centerPulse += 0.009;
+        const pulseY = Math.sin(centerPulse) * 1.5;
+        const currentAlpha = centerAlpha / 255.0;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 54px Georgia, serif';
+
+        // Efek Glow lembut merah
+        ctx.globalAlpha = currentAlpha * 0.7;
+        ctx.fillStyle = 'rgb(255, 20, 60)';
+        ctx.shadowColor = 'rgb(255, 20, 60)';
+        ctx.shadowBlur = 18;
+        ctx.fillText(CFG.centerText, centerX, centerY + pulseY + 2);
+
+        // Teks Utama
+        ctx.globalAlpha = currentAlpha;
+        ctx.fillStyle = CFG.centerColor;
+        ctx.shadowColor = 'rgba(255, 200, 220, 0.8)';
+        ctx.shadowBlur = 8;
+        ctx.fillText(CFG.centerText, centerX, centerY + pulseY);
+
+        ctx.restore();
+      }
+
+      requestAnimationFrame(animate);
+    }
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
